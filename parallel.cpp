@@ -4,6 +4,10 @@
 #include <math.h>   // For sqrt(), fabs()
 #include <mpi.h>    // For MPI functions
 
+//mpicxx -o parallel_mpi parallel.cpp
+//mpirun -np 4 --use-hwthread-cpus ./parallel_mpi
+//mpirun -np 9 --use-hwthread-cpus ./parallel_mpi
+
 int ProcNum = 0;
 int ProcRank = 0;
 int GridSize;
@@ -79,17 +83,17 @@ int main(int argc, char* argv[]) {
 
         if (ProcRank == 0) {
             //COMMENT IF BIG
-            printf("\nInitial A Matrix \n");
-            PrintMatrix(pAMatrix, Size, Size);
-            printf("\nInitial B Matrix \n");
-            PrintMatrix(pBMatrix, Size, Size);
+            //printf("\nInitial A Matrix \n");
+            //PrintMatrix(pAMatrix, Size, Size);
+            //printf("\nInitial B Matrix \n");
+            //PrintMatrix(pBMatrix, Size, Size);
         }
 
         DataDistribution(pAMatrix, pBMatrix, pMatrixABlock, pBblock, Size, BlockSize); // Task 5
 
         //COMMENT IF BIG
-        TestBlocks(pMatrixABlock, BlockSize, "Initial blocks of matrix A");
-        TestBlocks(pBblock, BlockSize, "Initial blocks of matrix B");
+        //TestBlocks(pMatrixABlock, BlockSize, "Initial blocks of matrix A");
+        //TestBlocks(pBblock, BlockSize, "Initial blocks of matrix B");
 
         // Ensure all processes are ready before starting the timer
         MPI_Barrier(MPI_COMM_WORLD);
@@ -107,7 +111,7 @@ int main(int argc, char* argv[]) {
         ResultCollection(pCMatrix, pCblock, Size, BlockSize);
 
         //COMMENT IF BIG
-        TestBlocks(pCblock, BlockSize, "Result blocks");
+        //TestBlocks(pCblock, BlockSize, "Result blocks");
 
         // Test correctness
         TestResult(pAMatrix, pBMatrix, pCMatrix, Size);
@@ -116,8 +120,8 @@ int main(int argc, char* argv[]) {
             printf("\nTime of execution: %f\n", Duration);
 
             //COMMENT IF BIG
-            printf("\nResult C Matrix \n");
-            PrintMatrix(pCMatrix, Size, Size);
+            //printf("\nResult C Matrix \n");
+            //PrintMatrix(pCMatrix, Size, Size);
         }
 
         ProcessTermination(pAMatrix, pBMatrix, pCMatrix, pAblock, pBblock,
@@ -246,9 +250,9 @@ void ParallelResultCalculation(double* pAblock, double* pMatrixABlock, double* p
 
         // Debug prints
         //COMMENT IF BIG
-        if (ProcRank == 0) printf("Iteration number %d \n", iter);
-        TestBlocks(pAblock, BlockSize, "Block of A matrix");
-        TestBlocks(pBblock, BlockSize, "Block of B matrix");
+        //if (ProcRank == 0) printf("Iteration number %d \n", iter);
+        //TestBlocks(pAblock, BlockSize, "Block of A matrix");
+        //TestBlocks(pBblock, BlockSize, "Block of B matrix");
     }
 }
 
@@ -263,6 +267,41 @@ void ABlockCommunication(int iter, double* pAblock, double* pMatrixABlock, int B
     MPI_Bcast(pAblock, BlockSize*BlockSize, MPI_DOUBLE, Pivot, RowComm);
 }
 
+/**
+ * @brief Performs a cyclic UPWARD shift of the B blocks.
+ * (This version correctly sends UP and receives from DOWN)
+ */
+void BBlockCommunication(double* pBblock, int BlockSize, MPI_Comm ColComm) {
+    MPI_Status Status;
+    int rank_source_FROM_DOWN; // The rank of the process below us
+    int rank_dest_TO_UP;       // The rank of the process above us
+
+    // We want to shift UP. A displacement of -1 finds the ranks
+    // for an upward shift.
+    //
+    // MPI_Cart_shift(comm, direction, displacement, *rank_source, *rank_dest)
+    //
+    // With disp = -1 (upward):
+    //   - rank_source_FROM_DOWN gets the rank of the process "below" us
+    //   - rank_dest_TO_UP       gets the rank of the process "above" us
+    MPI_Cart_shift(ColComm, 0, -1, &rank_source_FROM_DOWN, &rank_dest_TO_UP);
+
+    // MPI_Sendrecv_replace(buf, ..., dest, ..., source, ...)
+    //
+    // We send to our destination (UP)
+    // We receive from our source (DOWN)
+    MPI_Sendrecv_replace(
+        pBblock,
+        BlockSize * BlockSize,
+        MPI_DOUBLE,
+        rank_dest_TO_UP, 0,        // dest = rank of process to send TO (UP)
+        rank_source_FROM_DOWN, 0,  // source = rank of process to receive FROM (DOWN)
+        ColComm,
+        &Status
+    );
+}
+
+/*
 void BBlockCommunication(double* pBblock, int BlockSize, MPI_Comm ColComm) {
     MPI_Status Status;
     int rank_source_up, rank_dest_down;
@@ -280,7 +319,7 @@ void BBlockCommunication(double* pBblock, int BlockSize, MPI_Comm ColComm) {
         &Status
     );
 }
-
+*/
 
 void BlockMultiplication(double* pAblock, double* pBblock, double* pCblock, int BlockSize) {
     SerialResultCalculation(pAblock, pBblock, pCblock, BlockSize);
@@ -333,9 +372,10 @@ void TestResult(double* pAMatrix, double* pBMatrix, double* pCMatrix, int Size) 
         // Run the serial calculation
         SerialResultCalculation(pAMatrix, pBMatrix, pSerialResult, Size);
 
+        //COMMENT IF BIG
         // Print the correct serial result
-        printf("\n--- Serial Result (Correct) ---\n");
-        PrintMatrix(pSerialResult, Size, Size);
+        //printf("\n--- Serial Result (Correct) ---\n");
+        //PrintMatrix(pSerialResult, Size, Size);
 
         // Compare
         for (i = 0; i < Size*Size; i++) {
