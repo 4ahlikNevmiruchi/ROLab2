@@ -78,16 +78,18 @@ int main(int argc, char* argv[]) {
                               pCblock, pMatrixABlock, Size, BlockSize); // Task 3
 
         if (ProcRank == 0) {
-            //printf("\nInitial A Matrix \n");
-            //PrintMatrix(pAMatrix, Size, Size);
-            //printf("\nInitial B Matrix \n");
-            //PrintMatrix(pBMatrix, Size, Size);
+            //COMMENT IF BIG
+            printf("\nInitial A Matrix \n");
+            PrintMatrix(pAMatrix, Size, Size);
+            printf("\nInitial B Matrix \n");
+            PrintMatrix(pBMatrix, Size, Size);
         }
 
         DataDistribution(pAMatrix, pBMatrix, pMatrixABlock, pBblock, Size, BlockSize); // Task 5
 
-        //TestBlocks(pMatrixABlock, BlockSize, "Initial blocks of matrix A");
-        //TestBlocks(pBblock, BlockSize, "Initial blocks of matrix B");
+        //COMMENT IF BIG
+        TestBlocks(pMatrixABlock, BlockSize, "Initial blocks of matrix A");
+        TestBlocks(pBblock, BlockSize, "Initial blocks of matrix B");
 
         // Ensure all processes are ready before starting the timer
         MPI_Barrier(MPI_COMM_WORLD);
@@ -104,7 +106,8 @@ int main(int argc, char* argv[]) {
         // Gather results
         ResultCollection(pCMatrix, pCblock, Size, BlockSize);
 
-        //TestBlocks(pCblock, BlockSize, "Result blocks");
+        //COMMENT IF BIG
+        TestBlocks(pCblock, BlockSize, "Result blocks");
 
         // Test correctness
         TestResult(pAMatrix, pBMatrix, pCMatrix, Size);
@@ -112,8 +115,9 @@ int main(int argc, char* argv[]) {
         if (ProcRank == 0) {
             printf("\nTime of execution: %f\n", Duration);
 
-            //printf("\nResult C Matrix \n");
-            //PrintMatrix(pCMatrix, Size, Size);
+            //COMMENT IF BIG
+            printf("\nResult C Matrix \n");
+            PrintMatrix(pCMatrix, Size, Size);
         }
 
         ProcessTermination(pAMatrix, pBMatrix, pCMatrix, pAblock, pBblock,
@@ -241,9 +245,10 @@ void ParallelResultCalculation(double* pAblock, double* pMatrixABlock, double* p
         BBlockCommunication(pBblock, BlockSize, ColComm);
 
         // Debug prints
-        //if (ProcRank == 0) printf("Iteration number %d \n", iter);
-        //TestBlocks(pAblock, BlockSize, "Block of A matrix");
-        //TestBlocks(pBblock, BlockSize, "Block of B matrix");
+        //COMMENT IF BIG
+        if (ProcRank == 0) printf("Iteration number %d \n", iter);
+        TestBlocks(pAblock, BlockSize, "Block of A matrix");
+        TestBlocks(pBblock, BlockSize, "Block of B matrix");
     }
 }
 
@@ -260,19 +265,22 @@ void ABlockCommunication(int iter, double* pAblock, double* pMatrixABlock, int B
 
 void BBlockCommunication(double* pBblock, int BlockSize, MPI_Comm ColComm) {
     MPI_Status Status;
-    int NextProc, PrevProc;
+    int rank_source_up, rank_dest_down;
 
-    NextProc = GridCoords[0] + 1;
-    if (GridCoords[0] == GridSize - 1) NextProc = 0;
+    // Shift blocks of B upward (send up, receive from down)
+    MPI_Cart_shift(ColComm, 0, -1, &rank_source_up, &rank_dest_down);
 
-    PrevProc = GridCoords[0] - 1;
-    if (GridCoords[0] == 0) PrevProc = GridSize - 1;
-
-    MPI_Sendrecv_replace(pBblock, BlockSize*BlockSize, MPI_DOUBLE,
-                         NextProc, 0,
-                         PrevProc, 0,
-                         ColComm, &Status);
+    MPI_Sendrecv_replace(
+        pBblock,
+        BlockSize * BlockSize,
+        MPI_DOUBLE,
+        rank_source_up, 0,        // send upward
+        rank_dest_down, 0,        // receive from below
+        ColComm,
+        &Status
+    );
 }
+
 
 void BlockMultiplication(double* pAblock, double* pBblock, double* pCblock, int BlockSize) {
     SerialResultCalculation(pAblock, pBblock, pCblock, BlockSize);
@@ -325,6 +333,10 @@ void TestResult(double* pAMatrix, double* pBMatrix, double* pCMatrix, int Size) 
         // Run the serial calculation
         SerialResultCalculation(pAMatrix, pBMatrix, pSerialResult, Size);
 
+        // Print the correct serial result
+        printf("\n--- Serial Result (Correct) ---\n");
+        PrintMatrix(pSerialResult, Size, Size);
+
         // Compare
         for (i = 0; i < Size*Size; i++) {
             if (fabs(pSerialResult[i] - pCMatrix[i]) > Accuracy) {
@@ -370,8 +382,8 @@ void RandomDataInitialization(double* pAMatrix, double* pBMatrix, int Size) {
     int i;
     srand(unsigned(clock()));
     for (i = 0; i < Size*Size; i++) {
-        pAMatrix[i] = rand() / double(1000);
-        pBMatrix[i] = rand() / double(1000);
+        pAMatrix[i] = rand() / double(RAND_MAX);
+        pBMatrix[i] = rand() / double(RAND_MAX);
     }
 }
 
