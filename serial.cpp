@@ -1,12 +1,13 @@
-#include <stdio.h> // For C-style I/O: printf, scanf, getchar
-
-// --- Function Declarations ---
-
+#include <cstdio> // For C-style I/O
+#include <cstdlib> // For rand(), srand()
+#include <ctime>   // For clock(), time_t, CLOCKS_PER_SEC
 
 void ProcessInitialization(double* &pAMatrix, double* &pBMatrix, double* &pCMatrix, int &Size);
 void DummyDataInitialization(double* pAMatrix, double* pBMatrix, int Size);
+void RandomDataInitialization(double* pAMatrix, double* pBMatrix, int Size);
 void PrintMatrix(double* pMatrix, int Rows, int Cols);
 void SerialMatrixMultiplication(double* pAMatrix, double* pBMatrix, double* pCMatrix, int Size);
+void SerialResultCalculation(double* pAMatrix, double* pBMatrix, double* pCMatrix, int Size);
 void ProcessTermination(double* pAMatrix, double* pBMatrix, double* pCMatrix);
 
 int main() {
@@ -15,24 +16,36 @@ int main() {
     double* pCMatrix; // Result matrix
     int Size;         // Size of matrices
 
+    time_t start, finish;
+    double duration;
+
     printf("Serial matrix multiplication program\n");
 
     // Get size, allocate memory, and initialize
     ProcessInitialization(pAMatrix, pBMatrix, pCMatrix, Size);
 
-    // Print initial matrices
+
+    // NOTE: COMMENT OUT PrintMatrix ON LARGE EXPIREMENTS
     printf("\nInitial A Matrix \n");
     PrintMatrix(pAMatrix, Size, Size);
 
     printf("\nInitial B Matrix \n");
     PrintMatrix(pBMatrix, Size, Size);
+    // UP TO HERE
 
-    // Perform the multiplication
-    SerialMatrixMultiplication(pAMatrix, pBMatrix, pCMatrix, Size);
+    // Perform and time the multiplication
+    printf("\nCalculating result matrix...\n");
+    start = clock();
+    SerialResultCalculation(pAMatrix, pBMatrix, pCMatrix, Size);
+    finish = clock();
+    duration = (finish - start) / double(CLOCKS_PER_SEC);
 
-    // Print the result
+    // Print the result COMMENT OUT ON BIG CALCULATIONS
     printf("\nResult C Matrix \n");
     PrintMatrix(pCMatrix, Size, Size);
+
+    // Print the execution time
+    printf("\nTime of execution: %f sec\n", duration);
 
     //Free the memory
     ProcessTermination(pAMatrix, pBMatrix, pCMatrix);
@@ -60,7 +73,8 @@ void ProcessInitialization(double* &pAMatrix, double* &pBMatrix, double* &pCMatr
     pCMatrix = new double[Size*Size];
 
     // Initialization of matrix elements
-    DummyDataInitialization(pAMatrix, pBMatrix, Size);
+    RandomDataInitialization(pAMatrix, pBMatrix, Size);
+    //DummyDataInitialization(pAMatrix, pBMatrix, Size);
     for (int i = 0; i < Size*Size; i++) {
         pCMatrix[i] = 0; // Initialize result matrix to zero
     }
@@ -80,6 +94,20 @@ void DummyDataInitialization(double* pAMatrix, double* pBMatrix, int Size) {
     }
 }
 
+void RandomDataInitialization(double* pAMatrix, double* pBMatrix, int Size) {
+    int i, j; // Loop variables
+
+    // Seed the random number generator
+    srand(unsigned(clock()));
+
+    for (i = 0; i < Size; i++) {
+        for (j = 0; j < Size; j++) {
+            pAMatrix[i*Size + j] = rand() / double(1000);
+            pBMatrix[i*Size + j] = rand() / double(1000);
+        }
+    }
+}
+
 void PrintMatrix(double* pMatrix, int Rows, int Cols) {
     for (int i = 0; i < Rows; i++) {
         for (int j = 0; j < Cols; j++) {
@@ -89,16 +117,13 @@ void PrintMatrix(double* pMatrix, int Rows, int Cols) {
     }
 }
 
-void SerialMatrixMultiplication(double* pAMatrix, double* pBMatrix, double* pCMatrix, int Size) {
-    // Standard C = A * B algorithm
-    // C[i,j] = sum(A[i,k] * B[k,j]) for k = 0 to Size-1
-    for (int i = 0; i < Size; i++) {
-        for (int j = 0; j < Size; j++) {
-            double temp = 0;
-            for (int k = 0; k < Size; k++) {
-                temp += pAMatrix[i*Size + k] * pBMatrix[k*Size + j];
+void SerialResultCalculation(double* pAMatrix, double* pBMatrix, double* pCMatrix, int Size) {
+    int i, j, k; // Loop variables
+    for (i = 0; i < Size; i++) {
+        for (j = 0; j < Size; j++) {
+            for (k = 0; k < Size; k++) {
+                pCMatrix[i*Size + j] += pAMatrix[i*Size + k] * pBMatrix[k*Size + j];
             }
-            pCMatrix[i*Size + j] = temp;
         }
     }
 }
