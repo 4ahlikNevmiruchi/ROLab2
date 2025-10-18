@@ -4,9 +4,11 @@
 #include <math.h>   // For sqrt(), fabs()
 #include <mpi.h>    // For MPI functions
 
-//mpicxx -o parallel_mpi parallel.cpp
-//mpirun -np 4 --use-hwthread-cpus ./parallel_mpi
-//mpirun -np 9 --use-hwthread-cpus ./parallel_mpi
+// === COMMANDS TO BUILD AND RUN ===
+// mpicxx -o parallel_mpi parallel.cpp
+// mpirun -np 4 --use-hwthread-cpus ./parallel_mpi
+// mpirun -np 9 --use-hwthread-cpus ./parallel_mpi
+// mpirun -np 16 --use-hwthread-cpus ./parallel_mpi
 
 int ProcNum = 0;
 int ProcRank = 0;
@@ -27,6 +29,8 @@ double* pCblock;  // Block of result C
 double* pMatrixABlock; // Initial block of A
 
 double Start, Finish, Duration;
+double SerialDuration = 0.0;
+int runSerialTest = 0; // 1 to run 0 to not
 
 // --- Parallel Setup Functions ---
 void CreateGridCommunicators();
@@ -62,9 +66,11 @@ void SerialResultCalculation(double* pAMatrix, double* pBMatrix, double* pCMatri
 
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv);
+
+    setvbuf(stdout, 0, _IONBF, 0);
+
     MPI_Comm_size(MPI_COMM_WORLD, &ProcNum);
     MPI_Comm_rank(MPI_COMM_WORLD, &ProcRank);
-    setvbuf(stdout, 0, _IONBF, 0);
 
     GridSize = sqrt((double)ProcNum);
     if (ProcNum != GridSize * GridSize) {
@@ -82,12 +88,16 @@ int main(int argc, char* argv[]) {
                               pCblock, pMatrixABlock, Size, BlockSize); // Task 3
 
         if (ProcRank == 0) {
+            printf("\nAll inputs received. Starting calculations...\n");
+        }
+
+        //if (ProcRank == 0) {
             //COMMENT IF BIG
             //printf("\nInitial A Matrix \n");
             //PrintMatrix(pAMatrix, Size, Size);
             //printf("\nInitial B Matrix \n");
             //PrintMatrix(pBMatrix, Size, Size);
-        }
+        //}
 
         DataDistribution(pAMatrix, pBMatrix, pMatrixABlock, pBblock, Size, BlockSize); // Task 5
 
@@ -113,15 +123,36 @@ int main(int argc, char* argv[]) {
         //COMMENT IF BIG
         //TestBlocks(pCblock, BlockSize, "Result blocks");
 
-        // Test correctness
-        TestResult(pAMatrix, pBMatrix, pCMatrix, Size);
+        // --- Run Serial Calculation (conditionally) ---
+        if (runSerialTest == 1) {
+            TestResult(pAMatrix, pBMatrix, pCMatrix, Size);
+        } else {
+            if (ProcRank == 0) {
+                printf("\nVerification: \t\t[SKIPPED]\n");
+            }
+        }
 
-        if (ProcRank == 0) {
-            printf("\nTime of execution: %f\n", Duration);
+        //if (ProcRank == 0) {
 
             //COMMENT IF BIG
             //printf("\nResult C Matrix \n");
             //PrintMatrix(pCMatrix, Size, Size);
+        //}
+
+        // --- Print All Experiment Data ---
+        if (ProcRank == 0) {
+            printf("\n--- EXPERIMENT RESULTS ---\n");
+            printf("Matrix Size: \t\t%d\n", Size);
+
+            if (runSerialTest == 1) {
+                printf("Serial Time: \t\t%f s\n", SerialDuration);
+                printf("Parallel Time (%d ps): \t%f s\n", ProcNum, Duration);
+                printf("Speedup (%d ps): \t\t%f\n", ProcNum, SerialDuration / Duration);
+            } else {
+                // Only print parallel time if serial wasn't run
+                printf("Parallel Time (%d ps): \t%f s\n", ProcNum, Duration);
+            }
+            printf("---------------------------\n");
         }
 
         ProcessTermination(pAMatrix, pBMatrix, pCMatrix, pAblock, pBblock,
@@ -163,8 +194,10 @@ void ProcessInitialization(double* &pAMatrix, double* &pBMatrix, double* &pCMatr
 
     if (ProcRank == 0) {
         do {
-            printf("\nEnter the size of matrices: ");
-            scanf("%d", &Size);
+            printf("\nEnter the size of matrices:\n");
+            fflush(stdout);
+
+            scanf(" %d", &Size);
             if (Size <= 0) {
                 printf("\nSize of objects must be greater than 0!\n");
             }
@@ -172,9 +205,17 @@ void ProcessInitialization(double* &pAMatrix, double* &pBMatrix, double* &pCMatr
                 printf("Size of matrices must be divisible by the grid size!\n");
             }
         } while (Size <= 0 || (Size % GridSize != 0));
+        // NEW: Ask to run serial test
+        printf("Run serial calculation for verification? (1 for Yes, 0 for No):\n");
+        fflush(stdout);
+
+        scanf(" %d", &runSerialTest);
     }
 
     MPI_Bcast(&Size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // NEW: Broadcast the test flag to all processes
+    MPI_Bcast(&runSerialTest, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     BlockSize = Size / GridSize;
 
@@ -196,9 +237,11 @@ void ProcessInitialization(double* &pAMatrix, double* &pBMatrix, double* &pCMatr
         RandomDataInitialization(pAMatrix, pBMatrix, Size);
     }
 
+    /*
     if (ProcRank == 0) {
         while (getchar() != '\n');
     }
+    */
 }
 
 void ProcessTermination(double* pAMatrix, double* pBMatrix, double* &pCMatrix,
@@ -247,6 +290,14 @@ void ParallelResultCalculation(double* pAblock, double* pMatrixABlock, double* p
         ABlockCommunication(iter, pAblock, pMatrixABlock, BlockSize);
         BlockMultiplication(pAblock, pBblock, pCblock, BlockSize);
         BBlockCommunication(pBblock, BlockSize, ColComm);
+
+        // Wait for all processes to finish this iteration first
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Let only the root process print the progress
+        if (ProcRank == 0) {
+            printf("... Iteration %d of %d complete.\n", iter + 1, GridSize);
+        }
 
         // Debug prints
         //COMMENT IF BIG
@@ -364,18 +415,32 @@ void TestResult(double* pAMatrix, double* pBMatrix, double* pCMatrix, int Size) 
         int equal = 1; // =1 if matrices are equal
         int i;
 
+        // Variables for serial timing
+        double serial_start, serial_finish;
+
         pSerialResult = new double[Size*Size];
         for (i = 0; i < Size*Size; i++) {
             pSerialResult[i] = 0;
         }
 
+        printf("\nStarting serial calculation... (this may take a while)\n");
+        fflush(stdout); // Force the message to print before the long wait
+
+        serial_start = MPI_Wtime();
+
         // Run the serial calculation
         SerialResultCalculation(pAMatrix, pBMatrix, pSerialResult, Size);
+
+        serial_finish = MPI_Wtime();
+        SerialDuration = serial_finish - serial_start; // Store in global var
 
         //COMMENT IF BIG
         // Print the correct serial result
         //printf("\n--- Serial Result (Correct) ---\n");
         //PrintMatrix(pSerialResult, Size, Size);
+
+        // --- NEW: Signal that serial is done ---
+        printf("...Serial calculation complete.\n");
 
         // Compare
         for (i = 0; i < Size*Size; i++) {
@@ -386,11 +451,9 @@ void TestResult(double* pAMatrix, double* pBMatrix, double* pCMatrix, int Size) 
         }
 
         if (equal == 1) {
-            printf("\nThe results of serial and parallel algorithms "
-                   "ARE identical.\n");
+            printf("\nVerification: \t\t[SUCCESS] Results are identical.\n");
         } else {
-            printf("\nThe results of serial and parallel algorithms "
-                   "are NOT identical. Check your code.\n");
+            printf("\nVerification: \t\t[FAILURE] Results are NOT identical.\n");
         }
 
         delete[] pSerialResult;
